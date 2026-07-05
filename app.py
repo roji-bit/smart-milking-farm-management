@@ -4,129 +4,136 @@ import pytz
 import pandas as pd
 
 # =========================================================
-# 1. PENGATURAN HALAMAN & CSS GLOBAL (JUDUL NAIK & HAPUS LOGO)
+# 1. PENGATURAN HALAMAN & CSS CUSTOM (DESAIN BARU)
 # =========================================================
-st.set_page_config(
-    page_title="Milking Time Report",
-    page_icon="🥛",
-    layout="centered"
-)
+st.set_page_config(page_title="Milking Time Report", page_icon="🥛", layout="centered")
 
-# Injeksi CSS super ketat untuk menghilangkan 2 logo bawah dan menaikkan judul
 st.markdown("""
     <style>
-        /* 1. Menaikkan judul mepet ke atas */
-        .block-container {
-            padding-top: 0.5rem !important;
-            padding-bottom: 5rem !important;
-            max-width: 500px !important;
-        }
-        
-        /* 2. Menghilangkan logo mahkota merah Streamlit */
-        footer {
-            visibility: hidden !important;
-            display: none !important;
-        }
-        
-        /* 3. Menghilangkan tombol menu bulat ungu & elemen header atas */
-        header {
-            visibility: hidden !important;
-            display: none !important;
-        }
-        
-        /* Trik khusus menghapus ruang kosong sisa logo di paling bawah layar */
-        .stAppDeployDropdown, .stAppToolbar, footer {
-            display: none !important;
-            visibility: hidden !important;
-        }
-        
-        /* Desain kartu judul hijau */
+        /* Sembunyikan elemen bawaan Streamlit */
+        header, footer, #MainMenu {visibility: hidden; display: none;}
+        .block-container {padding-top: 1rem !important; max-width: 500px !important;}
+
+        /* Header Hijau */
         .header-box {
-            background: linear-gradient(135deg, #11998e, #38ef7d);
-            color: white;
-            padding: 25px 15px;
-            border-radius: 20px;
-            text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            margin-bottom: 15px;
+            background-color: #4CAF50; color: white; padding: 25px 15px;
+            border-radius: 20px; text-align: center; margin-bottom: 20px;
         }
-        .header-box h1 {
-            margin: 0;
-            font-size: 24px;
-            font-weight: 800;
+
+        /* Tombol Grup (Hijau) */
+        .stButton > button {
+            background-color: #4CAF50 !important; color: white !important;
+            border-radius: 15px !important; border: none !important;
+            height: 60px !important; width: 100% !important;
+            font-size: 20px !important; font-weight: bold !important;
+            text-align: left !important; padding-left: 20px !important;
+            margin-bottom: 10px !important; display: flex !important;
+            justify-content: space-between !important; align-items: center !important;
         }
-        .header-box p {
-            margin: 5px 0 0 0;
-            font-size: 12px;
-            opacity: 0.9;
+
+        /* Tombol Sick (Merah) */
+        .sick-button > div > div > button {
+            background-color: #F44336 !important;
         }
+
+        /* Tombol End Milking (Gelap) */
+        .end-button > div > div > button {
+            background-color: #1E293B !important;
+            text-align: center !important; justify-content: center !important;
+        }
+        
+        .group-label { font-size: 18px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. LOGIKA JAM & SHIFT KERJA (WIB ZONA)
+# 2. LOGIKA DATA & WAKTU
 # =========================================================
 tz_jkt = pytz.timezone('Asia/Jakarta')
 waktu_sekarang = datetime.now(tz_jkt)
+tanggal_laporan = waktu_sekarang.strftime("%d/%m/%Y")
 
-jam_menit_str = waktu_sekarang.strftime("%H:%M")
-tanggal_str = waktu_sekarang.strftime("%d/%m/%Y")
-jam_int = waktu_sekarang.hour
+# Inisialisasi State (Penyimpanan Sementara)
+if 'history' not in st.session_state:
+    st.session_state.history = {}
 
-if 6 <= jam_int < 14:
-    shift_aktif = "Shift 1 (06:00 - 13:59)"
-elif 14 <= jam_int < 22:
-    shift_aktif = "Shift 2 (14:00 - 21:59)"
-else:
-    shift_aktif = "Shift 3 (22:00 - 05:59)"
+groups = [
+    "5B Fresh", "5B Early", "5A Early", "4B Early", 
+    "4A Late", "3B Late", "3A Late", "2A Late", "6A Sick"
+]
 
 # =========================================================
-# 3. TAMPILAN INTERFACE UTAMA
+# 3. TAMPILAN APLIKASI
 # =========================================================
 
-# Kartu Judul Utama
+# Header
 st.markdown(f"""
     <div class="header-box">
-        <h1>MILKING TIME REPORT</h1>
-        <p>BUMI ROJO KOYO • MILKING DEPARTMENT</p>
+        <h1 style='margin:0; font-size:26px;'>MILKING TIME REPORT</h1>
+        <p style='margin:5px 0 0 0;'>BUMI ROJO KOYO • MILKING DEPARTMENT</p>
     </div>
 """, unsafe_allow_html=True)
 
-# Status Shift & Waktu WIB
+# Shift Info
 with st.container(border=True):
-    st.markdown(f"🟢 **SHIFT KERJA SAAT INI:**")
-    st.markdown(f"### {shift_aktif}")
-    st.markdown(f"📆 **Tanggal:** {tanggal_str} | ⏰ **Jam WIB:** {jam_menit_str}")
+    st.markdown("🟢 **SHIFT KERJA SAAT INI:**")
+    st.selectbox("Pilih Shift:", ["Shift 1 (06:00 - 13:00)", "Shift 2 (14:00 - 21:00)", "Shift 3 (22:00 - 05:00)"], label_visibility="collapsed")
 
-# Formulir Input Pencatatan dengan Nama Kelompok Semula (Fresh, Early, dll)
-st.markdown("### 📋 PENCATATAN GRUP PERAH")
+# Progress Bar
+st.markdown("<br>", unsafe_allow_html=True)
+count_done = len(st.session_state.history)
+progress = count_done / (len(groups) + 1)
+col_a, col_b = st.columns([2,1])
+col_a.markdown(f"**PROGRESS PEMERAHAN**")
+col_b.markdown(f"<p style='text-align:right; color:green; font-weight:bold;'>{int(progress*100)}%</p>", unsafe_allow_html=True)
+st.progress(progress)
+st.caption(f"{count_done} dari {len(groups)+1} group selesai")
 
-# Mengembalikan nama-nama grup asli farm Bapak ke dalam daftar pilihan
-grup_opsi = ["Fresh", "Early", "Mid", "Late", "Drying", "Sick/Treatment"]
-grup_terpilih = st.selectbox("Pilih Group Sapi yang Siap Di-record:", grup_opsi)
+# Daftar Antrean
+st.markdown("<p style='text-align:center; color:grey; font-weight:bold;'>DAFTAR ANTREAN GROUP PERAH</p>", unsafe_allow_html=True)
 
-# Progress bar
-st.markdown("---")
-st.markdown("**PROGRESS PEMERAHAN**")
-st.progress(50)
-st.caption(f"3 dari {len(grup_opsi)} group selesai")
+for g in groups:
+    # Styling khusus untuk grup Sick
+    is_sick = "6A Sick" in g
+    button_type = "sick-button" if is_sick else "normal-button"
+    
+    col_btn = st.container()
+    with col_btn:
+        st.markdown(f'<div class="{button_type}">', unsafe_allow_html=True)
+        # Menampilkan jam jika sudah di-klik
+        label = f"{g} 🕒 {st.session_state.history.get(g, '')}" if g in st.session_state.history else f"{g} ▶️"
+        if st.button(label, key=g):
+            st.session_state.history[g] = waktu_sekarang.strftime("%H:%M")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-if st.button("🚀 Simpan Data Perahan", use_container_width=True):
-    st.success(f"Berhasil mencatat kelompok **{grup_terpilih}** pada jam {jam_menit_str} WIB!")
+# End Milking Button
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown('<div class="end-button">', unsafe_allow_html=True)
+label_end = f"🏁 🏁 END MILKING 🕒 {st.session_state.history.get('End', '')}" if 'End' in st.session_state.history else "🏁 🏁 END MILKING"
+if st.button(label_end, key="end_btn"):
+    st.session_state.history['End'] = waktu_sekarang.strftime("%H:%M")
+st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 4. TABEL HISTORY SEMUA SHIFT (SESUAI NAMA GRUP ASLI)
+# 4. HISTORY & TEMPLATE WHATSAPP
 # =========================================================
 st.markdown("---")
-st.markdown("### 🕒 HISTORY PENCATATAN SHIFT")
+st.markdown("### 🕒 HISTORY PENCATATAN")
+if st.session_state.history:
+    df = pd.DataFrame([{"Group": k, "Jam": v} for k, v in st.session_state.history.items()])
+    st.table(df)
 
-# Simulasi data history menggunakan nama kelompok semula Bapak
-data_history = {
-    "Waktu": ["06:15", "07:20", "08:05"],
-    "Group Sapi": ["Fresh", "Early", "Mid"],
-    "Status": ["Selesai", "Selesai", "Selesai"]
-}
-df = pd.DataFrame(data_history)
-
-# Menampilkan kembali tabel history yang rapi di layar bawah
-st.dataframe(df, use_container_width=True, hide_index=True)
+    # Template WA
+    st.markdown("### 📱 TEMPLATE LAPORAN WA")
+    wa_text = f"*MILKING TIME REPORT*\n📅 Tanggal : {tanggal_laporan}\n\n"
+    for g in groups:
+        jam = st.session_state.history.get(g, "--:--")
+        wa_text += f"*{g}* : {jam}\n"
+    
+    jam_end = st.session_state.history.get('End', "--:--")
+    wa_text += f"\n*End Milking* : {jam_end}"
+    
+    st.code(wa_text, language="text")
+    st.info("Salin teks di atas untuk dikirim ke Grup WhatsApp.")
+else:
+    st.write("Belum ada data tercatat.")
