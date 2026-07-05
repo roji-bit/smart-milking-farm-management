@@ -82,7 +82,7 @@ grup_antrean = [g for g in all_groups if g not in grup_terisi_shift_ini]
 # =========================================================
 def kirim_wa_fonnte(grup_baru, jam_baru):
     token_fonnte = "dwRvJcr5jphRFnarpSL9"
-    target_wa = "081234567890"  # <<< GANTI dengan Nomor HP Tujuan / ID Group WA Bapak
+    target_wa = "6281332276546"  # <<< Sudah terkunci ke nomor Bapak
     
     # Menyusun format akumulatif teks berlanjut sesuai inputan baru
     pesan = f"*MILKING TIME REPORT*\n📅 Tanggal : {tanggal_str}\n🟢 Shift : {shift_aktif}\n\n"
