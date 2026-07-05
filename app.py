@@ -52,50 +52,51 @@ menit_int = waktu_sekarang.minute
 
 # Penentuan Shift Otomatis Sesuai Request Bapak
 if 6 <= jam_int < 14:
+    shift_idx = 0  # Shift 1
     shift_aktif = "Shift 1"
 elif 14 <= jam_int < 22:
+    shift_idx = 1  # Shift 2
     shift_aktif = "Shift 2"
 else:
+    shift_idx = 2  # Shift 3
     shift_aktif = "Shift 3"
 
-# Inisialisasi Database Sementara (Session State)
-if 'history_data' not in st.session_state:
-    st.session_state.history_data = []
+# Daftar semua grup perah tetap sesuai urutan
+all_groups = ["5B Fresh", "5B Early", "5A Early", "4B Early", "4A Late", "3B Late", "3A Late", "2A Late", "6A Sick", "End Milking"]
+
+# Inisialisasi Struktur Data Baru (Menyimpan 3 Shift per Grup)
+if 'milking_matrix' not in st.session_state:
+    st.session_state.milking_matrix = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
 
 # Fitur Otomatis Refresh / Reset Data setiap Jam 05:30 Pagi WIB
 if jam_int == 5 and menit_int == 30:
-    st.session_state.history_data = []
+    st.session_state.milking_matrix = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
     st.rerun()
 
-# Daftar semua grup perah semula
-all_groups = ["5B Fresh", "5B Early", "5A Early", "4B Early", "4A Late", "3B Late", "3A Late", "2A Late", "6A Sick", "End Milking"]
-
-# Memfilter grup yang BELUM diklik pada shift aktif saat ini agar tombol yang sudah diklik langsung hilang
-grup_terisi_shift_ini = [
-    d['Group'] for d in st.session_state.history_data 
-    if d['Shift'] == shift_aktif and d['Tanggal'] == tanggal_str
-]
-grup_antrean = [g for g in all_groups if g not in grup_terisi_shift_ini]
+# Memfilter grup yang BELUM diisi pada SHIFT AKTIF SAAT INI agar tombol langsung hilang
+grup_antrean = [g for g in all_groups if st.session_state.milking_matrix[g][shift_idx] == "--:--"]
 
 # =========================================================
-# 3. FUNGSI OTOMATIS TEMBAK WHATSAPP (FONNTE GATEWAY)
+# 3. FUNGSI OTOMATIS TEMBAK WHATSAPP FORMAT BARU
 # =========================================================
-def kirim_wa_fonnte(grup_baru, jam_baru):
+def kirim_wa_fonnte_format_baru():
     token_fonnte = "dwRvJcr5jphRFnarpSL9"
-    target_wa = "6281332276546"  # <<< Sudah terkunci ke nomor Bapak
+    target_wa = "6281332276546"
     
-    # Menyusun format akumulatif teks berlanjut sesuai inputan baru
-    pesan = f"*MILKING TIME REPORT*\n📅 Tanggal : {tanggal_str}\n🟢 Shift : {shift_aktif}\n\n"
+    # Menyusun format persis seperti yang Bapak minta
+    pesan = f"*MILKING TIME REPORT*\n📅 Tanggal : {tanggal_str}\n\n"
     
-    # Ambil data lama yang sudah terisi di shift ini
-    for item in st.session_state.history_data:
-        if item['Shift'] == shift_aktif and item['Tanggal'] == tanggal_str:
-            pesan += f"*{item['Group']}* : {item['Jam']}\n"
-            
-    # Tambahkan data baru yang barusan diklik
-    pesan += f"*{grup_baru}* : {jam_baru}\n"
-    
-    # Proses kirim API ke Fonnte
+    for g in all_groups:
+        if g == "End Milking":
+            pesan += "\n" # Beri jarak kosong sebelum End Milking
+        
+        # Mengambil jam dari shift 1, 2, dan 3
+        s1 = st.session_state.milking_matrix[g][0]
+        s2 = st.session_state.milking_matrix[g][1]
+        s3 = st.session_state.milking_matrix[g][2]
+        
+        pesan += f"*{g}* : {s1} / {s2} / {s3}\n"
+        
     url = "https://api.fonnte.com/send"
     payload = {'target': target_wa, 'message': pesan}
     headers = {'Authorization': token_fonnte}
@@ -131,8 +132,8 @@ if grup_antrean:
             st.markdown('<div class="end-button">', unsafe_allow_html=True)
             if st.button(f"🏁 {g.upper()}", key=g, use_container_width=True):
                 waktu_klik = datetime.now(tz_jkt).strftime("%H:%M")
-                kirim_wa_fonnte(g, waktu_klik)
-                st.session_state.history_data.append({"Tanggal": tanggal_str, "Shift": shift_aktif, "Group": g, "Jam": waktu_klik})
+                st.session_state.milking_matrix[g][shift_idx] = waktu_klik
+                kirim_wa_fonnte_format_baru()
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
         else:
@@ -141,28 +142,28 @@ if grup_antrean:
             st.markdown(f'<div class="{div_style}">', unsafe_allow_html=True)
             if st.button(f"{g} ▶️", key=g, use_container_width=True):
                 waktu_klik = datetime.now(tz_jkt).strftime("%H:%M")
-                kirim_wa_fonnte(g, waktu_klik)
-                st.session_state.history_data.append({"Tanggal": tanggal_str, "Shift": shift_aktif, "Group": g, "Jam": waktu_klik})
+                st.session_state.milking_matrix[g][shift_idx] = waktu_klik
+                kirim_wa_fonnte_format_baru()
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 else:
-    st.success("🎉 Semua group perah untuk shift ini telah selesai dicatat!")
+    st.success(f"🎉 Semua group perah untuk {shift_aktif} telah selesai dicatat!")
 
 # =========================================================
-# 5. HISTORY HISTORY BERDASARKAN SHIFT 1, 2, DAN 3
+# 5. HISTORY HISTORY SESUAI LAYOUT REVISI BARU
 # =========================================================
 st.markdown("---")
 st.markdown("## 🕒 HISTORY PENCATATAN")
 
-df_master = pd.DataFrame(st.session_state.history_data)
+# Membuat tabel laporan komparasi 3 shift langsung
+rows = []
+for g in all_groups:
+    rows.append({
+        "Group Sapi": g,
+        "Shift 1": st.session_state.milking_matrix[g][0],
+        "Shift 2": st.session_state.milking_matrix[g][1],
+        "Shift 3": st.session_state.milking_matrix[g][2]
+    })
+df_matrix = pd.DataFrame(rows)
 
-for s in ["Shift 1", "Shift 2", "Shift 3"]:
-    st.markdown(f"### 📋 {s}")
-    if not df_master.empty:
-        df_shift = df_master[(df_master['Shift'] == s) & (df_master['Tanggal'] == tanggal_str)]
-        if not df_shift.empty:
-            st.dataframe(df_shift[["Group", "Jam"]], use_container_width=True, hide_index=True)
-        else:
-            st.caption("Belum ada data diinput untuk shift ini.")
-    else:
-        st.caption("Belum ada data diinput untuk shift ini.")
+st.dataframe(df_matrix, use_container_width=True, hide_index=True)
