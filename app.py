@@ -1,175 +1,225 @@
-import streamlit as st
-from datetime import datetime
-import pytz
-import pandas as pd
-import requests
-
-# =========================================================
-# 1. PENGATURAN HALAMAN & CSS CUSTOM
-# =========================================================
-st.set_page_config(page_title="Milking Time Report", page_icon="🥛", layout="centered")
-
-st.markdown("""
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milking Time Report</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
     <style>
-        header, footer, #MainMenu {visibility: hidden; display: none;}
-        .block-container {padding-top: 0.5rem !important; max-width: 500px !important;}
-
-        /* Header Hijau */
-        .header-box {
-            background-color: #4CAF50; color: white; padding: 20px 15px;
-            border-radius: 20px; text-align: center; margin-bottom: 15px;
-        }
-
-        /* Tombol List Antrean (Hijau) */
-        .stButton > button {
-            background-color: #4CAF50 !important; color: white !important;
-            border-radius: 15px !important; border: none !important;
-            height: 55px !important; width: 100% !important;
-            font-size: 18px !important; font-weight: bold !important;
-            text-align: left !important; padding-left: 20px !important;
-            margin-bottom: 8px !important;
-        }
-
-        /* Tombol Sick (Merah) */
-        .sick-button > div > div > button { background-color: #F44336 !important; }
-
-        /* Tombol End Milking (Gelap) */
-        .end-button > div > div > button {
-            background-color: #1E293B !important; text-align: center !important;
-        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
+        body { background-color: #f5f5f5; padding: 15px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 500px; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        
+        /* Header Box */
+        .header-box { background: linear-gradient(135deg, #11998e, #38ef7d); color: white; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 15px; }
+        .header-box h1 { font-size: 24px; font-weight: 800; }
+        .header-box p { font-size: 12px; opacity: 0.9; margin-top: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        /* Info Box */
+        .info-box { border: 1px solid #e0e0e0; padding: 15px; border-radius: 15px; margin-bottom: 15px; background-color: #fafafa; }
+        .info-title { color: #666; font-size: 14px; font-weight: bold; }
+        .info-shift { color: #4CAF50; font-size: 22px; font-weight: bold; margin-top: 2px; }
+        .info-time { font-size: 13px; color: #333; margin-top: 5px; }
+        
+        /* List Antrean */
+        .section-title { text-align: center; color: #888; font-weight: bold; font-size: 14px; margin: 20px 0 10px 0; letter-spacing: 0.5px; }
+        .btn-list { display: flex; flex-direction: column; gap: 8px; }
+        
+        /* Tombol Utama */
+        .btn-group { width: 100%; height: 55px; background-color: #4CAF50; color: white; border: none; border-radius: 12px; font-size: 18px; font-weight: bold; text-align: left; padding-left: 20px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .btn-group.sick { background-color: #F44336; }
+        .btn-group.end { background-color: #1E293B; justify-content: center; padding: 0; }
+        .btn-group:active { opacity: 0.9; }
+        
+        /* Tabel History */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        th, td { border: 1px solid #e0e0e0; padding: 10px; text-align: left; }
+        th { background-color: #fafafa; font-weight: bold; }
+        .success-msg { background-color: #e8f5e9; color: #2e7d32; padding: 15px; border-radius: 12px; text-align: center; font-weight: bold; font-size: 15px; }
     </style>
-""", unsafe_allow_html=True)
+</head>
+<body>
 
-# =========================================================
-# 2. SISTEM DATABASE GLOBAL SERVER (ANTI REFRESH / GANGGUAN WI-FI)
-# =========================================================
-# Menggunakan cache_resource agar data terkunci di sisi server internet, bukan di HP lokal
-@st.cache_resource
-def inisialisasi_database_server():
-    # Membuat penyimpanan permanen selama server aktif
-    return {}
-
-db_server = inisialisasi_database_server()
-
-# Logika Waktu WIB
-tz_jkt = pytz.timezone('Asia/Jakarta')
-waktu_sekarang = datetime.now(tz_jkt)
-tanggal_str = waktu_sekarang.strftime("%d/%m/%Y")
-jam_menit_str = waktu_sekarang.strftime("%H:%M")
-jam_int = waktu_sekarang.hour
-menit_int = waktu_sekarang.minute
-
-# Penentuan Urutan Shift Kerja
-if 6 <= jam_int < 14:
-    shift_idx = 0
-    shift_aktif = "Shift 1"
-elif 14 <= jam_int < 22:
-    shift_idx = 1
-    shift_aktif = "Shift 2"
-else:
-    shift_idx = 2
-    shift_aktif = "Shift 3"
-
-# Daftar grup perah
-all_groups = ["5B Fresh", "5B Early", "5A Early", "4B Early", "4A Late", "3B Late", "3A Late", "2A Late", "6A Sick", "End Milking"]
-
-# Kunci Database berdasarkan tanggal hari ini agar data hari sebelumnya tersimpan aman
-if tanggal_str not in db_server:
-    db_server[tanggal_str] = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
-
-# FITUR SAKTI AUTO-RESET JAM 05:30 PAGI WIB
-if jam_int == 5 and menit_int == 30:
-    db_server[tanggal_str] = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
-    st.rerun()
-
-# Membaca data antrean aktif dari database server (Aman walau di-refresh tim lapangan)
-grup_antrean = [g for g in all_groups if db_server[tanggal_str][g][shift_idx] == "--:--"]
-
-# =========================================================
-# 3. FUNGSI OTOMATIS TEMBAK WHATSAPP FORMAT BARU
-# =========================================================
-def kirim_wa_fonnte_format_baru():
-    token_fonnte = "dwRvJcr5jphRFnarpSL9"
-    target_wa = "6281332276546"
-    
-    pesan = f"*MILKING TIME REPORT*\n📅 Tanggal : {tanggal_str}\n\n"
-    
-    for g in all_groups:
-        if g == "End Milking":
-            pesan += "\n"
-        
-        s1 = db_server[tanggal_str][g][0]
-        s2 = db_server[tanggal_str][g][1]
-        s3 = db_server[tanggal_str][g][2]
-        
-        pesan += f"*{g}* : {s1} / {s2} / {s3}\n"
-        
-    url = "https://api.fonnte.com/send"
-    payload = {'target': target_wa, 'message': pesan}
-    headers = {'Authorization': token_fonnte}
-    try:
-        requests.post(url, data=payload, headers=headers)
-    except:
-        pass
-
-# =========================================================
-# 4. INTERFACE UTAMA APLIKASI
-# =========================================================
-
-# Kotak Judul
-st.markdown(f"""
+<div class="container">
     <div class="header-box">
-        <h1 style='margin:0; font-size:24px;'>MILKING TIME REPORT</h1>
-        <p style='margin:5px 0 0 0;'>BUMI ROJO KOYO • MILKING DEPARTMENT</p>
+        <h1>MILKING TIME REPORT</h1>
+        <p>MILKING DEPARTMENT • INDEPENDENT SYSTEM</p>
     </div>
-""", unsafe_allow_html=True)
 
-# Info Jam & Shift Otomatis
-with st.container(border=True):
-    st.markdown(f"⏱️ **SISTEM DETEKSI OTOMATIS:**")
-    st.markdown(f"### 🟢 {shift_aktif}")
-    st.markdown(f"📆 Tanggal: **{tanggal_str}** | ⏰ Jam WIB: **{jam_menit_str}**")
+    <div class="info-box">
+        <div class="info-title">⏱️ SISTEM DETEKSI OTOMATIS:</div>
+        <div class="info-shift" id="txt-shift">Memuat...</div>
+        <div class="info-time" id="txt-waktu">Memuat tanggal dan jam...</div>
+    </div>
 
-st.markdown("<br><p style='text-align:center; color:grey; font-weight:bold; margin-bottom:5px;'>DAFTAR ANTREAN GROUP PERAH</p>", unsafe_allow_html=True)
+    <div class="section-title">DAFTAR ANTREAN GROUP PERAH</div>
+    <div class="btn-list" id="area-tombol">
+        </div>
+    <div id="area-sukses" class="success-msg" style="display: none;">
+        🎉 Semua group perah untuk shift ini telah selesai dicatat!
+    </div>
 
-# Tampilan Tombol Antrean yang Tersisa
-if grup_antrean:
-    for g in grup_antrean:
-        if g == "End Milking":
-            st.markdown('<div class="end-button">', unsafe_allow_html=True)
-            if st.button(f"🏁 {g.upper()}", key=g, use_container_width=True):
-                waktu_klik = datetime.now(tz_jkt).strftime("%H:%M")
-                db_server[tanggal_str][g][shift_idx] = waktu_klik
-                kirim_wa_fonnte_format_baru()
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            is_sick = "6A Sick" in g
-            div_style = "sick-button" if is_sick else "normal-button"
-            st.markdown(f'<div class="{div_style}">', unsafe_allow_html=True)
-            if st.button(f"{g} ▶️", key=g, use_container_width=True):
-                waktu_klik = datetime.now(tz_jkt).strftime("%H:%M")
-                db_server[tanggal_str][g][shift_idx] = waktu_klik
-                kirim_wa_fonnte_format_baru()
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-else:
-    st.success(f"🎉 Semua group perah untuk {shift_aktif} telah selesai dicatat!")
+    <div class="section-title" style="margin-top: 30px;">🕒 HISTORY PENCATATAN</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Group Sapi</th>
+                <th>Shift 1</th>
+                <th>Shift 2</th>
+                <th>Shift 3</th>
+            </tr>
+        </thead>
+        <tbody id="tabel-history">
+            </tbody>
+    </table>
+</div>
 
-# =========================================================
-# 5. HISTORY PENCATATAN (REAL-TIME SERVER DATA)
-# =========================================================
-st.markdown("---")
-st.markdown("## 🕒 HISTORY PENCATATAN")
+<script>
+    // =========================================================
+    // DATA PROYEK FIREBASE (TERKUNCI)
+    // =========================================================
+    const firebaseConfig = {
+        apiKey: "AIzaSyC2NlZ" + "q5Cst8vW_m26SHeA9pMvV_rO6iFs", 
+        databaseURL: "https://bumirojokoyo-milking-default-rtdb.asia-southeast1.firebasedatabase.app"
+    };
+    
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
 
-rows = []
-for g in all_groups:
-    rows.append({
-        "Group Sapi": g,
-        "Shift 1": db_server[tanggal_str][g][0],
-        "Shift 2": db_server[tanggal_str][g][1],
-        "Shift 3": db_server[tanggal_str][g][2]
-    })
-df_matrix = pd.DataFrame(rows)
+    // Data Konfigurasi Tetap Aplikasi
+    const allGroups = ["5B Fresh", "5B Early", "5A Early", "4B Early", "4A Late", "3B Late", "3A Late", "2A Late", "6A Sick", "End Milking"];
+    const tokenFonnte = "dwRvJcr5jphRFnarpSL9";
+    const targetWa = "6281332276546";
 
-st.dataframe(df_matrix, use_container_width=True, hide_index=True)
+    // Variabel Penentu Waktu & Shift
+    let tanggalStr = "";
+    let shiftAktif = "";
+    let shiftIdx = 0;
+
+    function updateWaktuDanShift() {
+        const sekarang = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
+        
+        let dd = String(sekarang.getDate()).padStart(2, '0');
+        let mm = String(sekarang.getMonth() + 1).padStart(2, '0');
+        let yyyy = sekarang.getFullYear();
+        tanggalStr = `${dd}-${mm}-${yyyy}`; // Format tanggal id Firebase
+
+        let jam = sekarang.getHours();
+        let menit = String(sekarang.getMinutes()).padStart(2, '0');
+        let jamMenit = `${String(jam).padStart(2, '0')}:${menit}`;
+
+        // Reset Otomatis Jam 05:30 Pagi
+        if (jam === 5 && menit === "30") {
+            database.ref('milking/' + tanggalStr).remove();
+            location.reload();
+        }
+
+        // Pembagian Shift Otomatis sesuai jam kerja
+        if (jam >= 6 && jam < 14) {
+            shiftAktif = "Shift 1"; shiftIdx = 0;
+        } else if (jam >= 14 && jam < 22) {
+            shiftAktif = "Shift 2"; shiftIdx = 1;
+        } else {
+            shiftAktif = "Shift 3"; shiftIdx = 2;
+        }
+
+        document.getElementById("txt-shift").innerText = `🟢 ${shiftAktif}`;
+        document.getElementById("txt-waktu").innerText = `📆 Tanggal: ${dd}/${mm}/${yyyy} | ⏰ Jam WIB: ${jamMenit}`;
+    }
+
+    // Jalankan waktu pertama kali
+    updateWaktuDanShift();
+    setInterval(updateWaktuDanShift, 10000); // Sinkronisasi berkala tiap 10 detik
+
+    // Mendengarkan Perubahan Data secara Real-time dari Firebase Server
+    database.ref('milking/' + tanggalStr).on('value', (snapshot) => {
+        let data = snapshot.val() || {};
+        
+        // Pastikan struktur dasar grup siap
+        allGroups.forEach(g => {
+            if (!data[g]) data[g] = ["--:--", "--:--", "--:--"];
+        });
+
+        // 1. Render Ulang Tombol Antrean (Tombol terisi otomatis HILANG dari antrean)
+        const areaTombol = document.getElementById("area-tombol");
+        areaTombol.innerHTML = "";
+        let adaTombol = false;
+
+        allGroups.forEach(g => {
+            if (data[g][shiftIdx] === "--:--") {
+                adaTombol = true;
+                const btn = document.createElement("button");
+                btn.className = "btn-group";
+                
+                if (g === "6A Sick") btn.classList.add("sick");
+                if (g === "End Milking") {
+                    btn.classList.add("end");
+                    btn.innerHTML = `🏁 ${g.toUpperCase()}`;
+                } else {
+                    btn.innerHTML = `<span>${g}</span> <span>▶️</span>`;
+                }
+
+                btn.onclick = () => simpanDanKirim(g, data);
+                areaTombol.appendChild(btn);
+            }
+        });
+
+        if (adaTombol) {
+            document.getElementById("area-sukses").style.display = "none";
+        } else {
+            document.getElementById("area-sukses").style.display = "block";
+        }
+
+        // 2. Render Ulang Tabel History Bawah
+        const tabelHistory = document.getElementById("tabel-history");
+        tabelHistory.innerHTML = "";
+        allGroups.forEach(g => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td><b>${g}</b></td>
+                <td>${data[g][0]}</td>
+                <td>${data[g][1]}</td>
+                <td>${data[g][2]}</td>
+            `;
+            tabelHistory.appendChild(tr);
+        });
+    });
+
+    // Fungsi klik tombol: Simpan ke Firebase Database + Kirim Tembakan Otomatis WA Fonnte
+    function simpanDanKirim(group, dataSekarang) {
+        const sekarang = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
+        let jamKlik = `${String(sekarang.getHours()).padStart(2, '0')}:${String(sekarang.getMinutes()).padStart(2, '0')}`;
+        
+        // Update data lokal sebelum kirim WA
+        dataSekarang[group][shiftIdx] = jamKlik;
+
+        // 1. Simpan permanen ke Firebase Database Cloud Server
+        database.ref('milking/' + tanggalStr + '/' + group + '/' + shiftIdx).set(jamKlik);
+
+        // 2. Susun template pesan berlanjut untuk dikirim ke Fonnte
+        let formatTanggalWA = tanggalStr.replace(/-/g, '/');
+        let pesan = `*MILKING TIME REPORT*\n📅 Tanggal : ${formatTanggalWA}\n\n`;
+        
+        allGroups.forEach(g => {
+            if (g === "End Milking") pesan += "\n";
+            pesan += `*${g}* : ${dataSekarang[g][0]} / ${dataSekarang[g][1]} / ${dataSekarang[g][2]}\n`;
+        });
+
+        // Kirim HTTP POST Request otomatis langsung ke API Fonnte Gateway
+        var formData = new FormData();
+        formData.append('target', targetWa);
+        formData.append('message', pesan);
+
+        fetch('https://api.fonnte.com/send', {
+            method: 'POST',
+            headers: { 'Authorization': tokenFonnte },
+            body: formData
+        }).catch(err => console.log("Gagal kirim WA:", err));
+    }
+</script>
+
+</body>
+</html>
