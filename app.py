@@ -4,7 +4,7 @@ import pytz
 import pandas as pd
 
 # =========================================================
-# 1. PENGATURAN HALAMAN & CSS GLOBAL SAKTI
+# 1. PENGATURAN HALAMAN & CSS GLOBAL (JUDUL NAIK & HAPUS LOGO)
 # =========================================================
 st.set_page_config(
     page_title="Milking Time Report",
@@ -98,33 +98,35 @@ with st.container(border=True):
     st.markdown(f"### {shift_aktif}")
     st.markdown(f"📆 **Tanggal:** {tanggal_str} | ⏰ **Jam WIB:** {jam_menit_str}")
 
-# Formulir Input Pencatatan
+# Formulir Input Pencatatan dengan Nama Kelompok Semula (Fresh, Early, dll)
 st.markdown("### 📋 PENCATATAN GRUP PERAH")
-grup_opsi = [f"Grup {i}" for i in range(1, 10)]
+
+# Mengembalikan nama-nama grup asli farm Bapak ke dalam daftar pilihan
+grup_opsi = ["Fresh", "Early", "Mid", "Late", "Drying", "Sick/Treatment"]
 grup_terpilih = st.selectbox("Pilih Group Sapi yang Siap Di-record:", grup_opsi)
 
 # Progress bar
 st.markdown("---")
 st.markdown("**PROGRESS PEMERAHAN**")
-st.progress(33)
-st.caption("3 dari 9 group selesai")
+st.progress(50)
+st.caption(f"3 dari {len(grup_opsi)} group selesai")
 
 if st.button("🚀 Simpan Data Perahan", use_container_width=True):
-    st.success(f"Berhasil mencatat {grup_terpilih} pada jam {jam_menit_str} WIB!")
+    st.success(f"Berhasil mencatat kelompok **{grup_terpilih}** pada jam {jam_menit_str} WIB!")
 
 # =========================================================
-# 4. TABEL HISTORY SEMUA SHIFT (DIKEMBALIKAN)
+# 4. TABEL HISTORY SEMUA SHIFT (SESUAI NAMA GRUP ASLI)
 # =========================================================
 st.markdown("---")
 st.markdown("### 🕒 HISTORY PENCATATAN SHIFT")
 
-# Simulasi data history agar tabel muncul kembali dengan rapi
+# Simulasi data history menggunakan nama kelompok semula Bapak
 data_history = {
     "Waktu": ["06:15", "07:20", "08:05"],
-    "Group Sapi": ["Grup 1", "Grup 2", "Grup 3"],
+    "Group Sapi": ["Fresh", "Early", "Mid"],
     "Status": ["Selesai", "Selesai", "Selesai"]
 }
 df = pd.DataFrame(data_history)
 
-# Menampilkan tabel history di aplikasi
+# Menampilkan kembali tabel history yang rapi di layar bawah
 st.dataframe(df, use_container_width=True, hide_index=True)
