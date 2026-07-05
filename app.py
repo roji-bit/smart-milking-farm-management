@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 
 # =========================================================
-# 1. PENGATURAN HALAMAN & CSS CUSTOM (MEPET ATAS & TANPA LOGO)
+# 1. PENGATURAN HALAMAN & CSS CUSTOM
 # =========================================================
 st.set_page_config(page_title="Milking Time Report", page_icon="🥛", layout="centered")
 
@@ -41,8 +41,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. LOGIKA JAM, SHIFT AUTOMATION & AUTO RESET 05:30
+# 2. SISTEM DATABASE GLOBAL SERVER (ANTI REFRESH / GANGGUAN WI-FI)
 # =========================================================
+# Menggunakan cache_resource agar data terkunci di sisi server internet, bukan di HP lokal
+@st.cache_resource
+def inisialisasi_database_server():
+    # Membuat penyimpanan permanen selama server aktif
+    return {}
+
+db_server = inisialisasi_database_server()
+
+# Logika Waktu WIB
 tz_jkt = pytz.timezone('Asia/Jakarta')
 waktu_sekarang = datetime.now(tz_jkt)
 tanggal_str = waktu_sekarang.strftime("%d/%m/%Y")
@@ -50,31 +59,31 @@ jam_menit_str = waktu_sekarang.strftime("%H:%M")
 jam_int = waktu_sekarang.hour
 menit_int = waktu_sekarang.minute
 
-# Penentuan Shift Otomatis Sesuai Request Bapak
+# Penentuan Urutan Shift Kerja
 if 6 <= jam_int < 14:
-    shift_idx = 0  # Shift 1
+    shift_idx = 0
     shift_aktif = "Shift 1"
 elif 14 <= jam_int < 22:
-    shift_idx = 1  # Shift 2
+    shift_idx = 1
     shift_aktif = "Shift 2"
 else:
-    shift_idx = 2  # Shift 3
+    shift_idx = 2
     shift_aktif = "Shift 3"
 
-# Daftar semua grup perah tetap sesuai urutan
+# Daftar grup perah
 all_groups = ["5B Fresh", "5B Early", "5A Early", "4B Early", "4A Late", "3B Late", "3A Late", "2A Late", "6A Sick", "End Milking"]
 
-# Inisialisasi Struktur Data Baru (Menyimpan 3 Shift per Grup)
-if 'milking_matrix' not in st.session_state:
-    st.session_state.milking_matrix = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
+# Kunci Database berdasarkan tanggal hari ini agar data hari sebelumnya tersimpan aman
+if tanggal_str not in db_server:
+    db_server[tanggal_str] = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
 
-# Fitur Otomatis Refresh / Reset Data setiap Jam 05:30 Pagi WIB
+# FITUR SAKTI AUTO-RESET JAM 05:30 PAGI WIB
 if jam_int == 5 and menit_int == 30:
-    st.session_state.milking_matrix = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
+    db_server[tanggal_str] = {g: ["--:--", "--:--", "--:--"] for g in all_groups}
     st.rerun()
 
-# Memfilter grup yang BELUM diisi pada SHIFT AKTIF SAAT INI agar tombol langsung hilang
-grup_antrean = [g for g in all_groups if st.session_state.milking_matrix[g][shift_idx] == "--:--"]
+# Membaca data antrean aktif dari database server (Aman walau di-refresh tim lapangan)
+grup_antrean = [g for g in all_groups if db_server[tanggal_str][g][shift_idx] == "--:--"]
 
 # =========================================================
 # 3. FUNGSI OTOMATIS TEMBAK WHATSAPP FORMAT BARU
@@ -83,17 +92,15 @@ def kirim_wa_fonnte_format_baru():
     token_fonnte = "dwRvJcr5jphRFnarpSL9"
     target_wa = "6281332276546"
     
-    # Menyusun format persis seperti yang Bapak minta
     pesan = f"*MILKING TIME REPORT*\n📅 Tanggal : {tanggal_str}\n\n"
     
     for g in all_groups:
         if g == "End Milking":
-            pesan += "\n" # Beri jarak kosong sebelum End Milking
+            pesan += "\n"
         
-        # Mengambil jam dari shift 1, 2, dan 3
-        s1 = st.session_state.milking_matrix[g][0]
-        s2 = st.session_state.milking_matrix[g][1]
-        s3 = st.session_state.milking_matrix[g][2]
+        s1 = db_server[tanggal_str][g][0]
+        s2 = db_server[tanggal_str][g][1]
+        s3 = db_server[tanggal_str][g][2]
         
         pesan += f"*{g}* : {s1} / {s2} / {s3}\n"
         
@@ -125,14 +132,14 @@ with st.container(border=True):
 
 st.markdown("<br><p style='text-align:center; color:grey; font-weight:bold; margin-bottom:5px;'>DAFTAR ANTREAN GROUP PERAH</p>", unsafe_allow_html=True)
 
-# Tampilan Tombol Antrean yang Tersisa (Akan berkurang/hilang satu per satu saat diklik)
+# Tampilan Tombol Antrean yang Tersisa
 if grup_antrean:
     for g in grup_antrean:
         if g == "End Milking":
             st.markdown('<div class="end-button">', unsafe_allow_html=True)
             if st.button(f"🏁 {g.upper()}", key=g, use_container_width=True):
                 waktu_klik = datetime.now(tz_jkt).strftime("%H:%M")
-                st.session_state.milking_matrix[g][shift_idx] = waktu_klik
+                db_server[tanggal_str][g][shift_idx] = waktu_klik
                 kirim_wa_fonnte_format_baru()
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -142,7 +149,7 @@ if grup_antrean:
             st.markdown(f'<div class="{div_style}">', unsafe_allow_html=True)
             if st.button(f"{g} ▶️", key=g, use_container_width=True):
                 waktu_klik = datetime.now(tz_jkt).strftime("%H:%M")
-                st.session_state.milking_matrix[g][shift_idx] = waktu_klik
+                db_server[tanggal_str][g][shift_idx] = waktu_klik
                 kirim_wa_fonnte_format_baru()
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -150,19 +157,18 @@ else:
     st.success(f"🎉 Semua group perah untuk {shift_aktif} telah selesai dicatat!")
 
 # =========================================================
-# 5. HISTORY HISTORY SESUAI LAYOUT REVISI BARU
+# 5. HISTORY PENCATATAN (REAL-TIME SERVER DATA)
 # =========================================================
 st.markdown("---")
 st.markdown("## 🕒 HISTORY PENCATATAN")
 
-# Membuat tabel laporan komparasi 3 shift langsung
 rows = []
 for g in all_groups:
     rows.append({
         "Group Sapi": g,
-        "Shift 1": st.session_state.milking_matrix[g][0],
-        "Shift 2": st.session_state.milking_matrix[g][1],
-        "Shift 3": st.session_state.milking_matrix[g][2]
+        "Shift 1": db_server[tanggal_str][g][0],
+        "Shift 2": db_server[tanggal_str][g][1],
+        "Shift 3": db_server[tanggal_str][g][2]
     })
 df_matrix = pd.DataFrame(rows)
 
